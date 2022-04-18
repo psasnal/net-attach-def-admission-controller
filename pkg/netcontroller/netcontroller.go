@@ -293,6 +293,7 @@ func (c *NetworkController) handleNodeUpdateEvent(oldObj, newObj interface{}) {
 	list, err := c.netAttachDefClientSet.K8sCniCncfIoV1().NetworkAttachmentDefinitions("").List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		klog.Errorf("List network attachment definitions failed because %s", err.Error())
+		return
 	}
 	for _, nad := range list.Items {
 		name := nad.ObjectMeta.Name
