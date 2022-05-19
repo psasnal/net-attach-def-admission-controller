@@ -289,18 +289,18 @@ func shouldTriggerAction(netAttachDef netv1.NetworkAttachmentDefinition) (NetCon
 	if netConf.Type != "ipvlan" {
 		return netConf, false, nil
 	}
+	// Check nodeSelector, if not present, this is not nokia proprietary ipvlan, skip the check
+        annotationsMap := netAttachDef.GetAnnotations()
+        ns, ok := annotationsMap[nodeSelectorKey]
+        if !ok || len(ns) == 0 {
+                return netConf, false, nil
+        }
 	if netConf.Vlan < 1 || netConf.Vlan > 4095 {
-		return netConf, false, fmt.Errorf("ipvlan vlan value out of bound. Valid range 1..4095")
+		return netConf, false, fmt.Errorf("Nokia Proprietary IPVLAN vlan value out of bound. Valid range 1..4095")
 	}
         if !strings.HasPrefix(netConf.Master, "tenant-bond") && !strings.HasPrefix(netConf.Master, "provider-bond"){
-                return netConf, false, fmt.Errorf("ipvlan only support master with tenant-bond and provider-bond")
+                return netConf, false, fmt.Errorf("Nokia Proprietary IPVLAN only support master with tenant-bond and provider-bond")
         }
-	// Check nodeSelector
-	annotationsMap := netAttachDef.GetAnnotations()
-	ns, ok := annotationsMap[nodeSelectorKey]
-	if !ok || len(ns) == 0 {
-		return netConf, false, fmt.Errorf("NAD with ipvlan, but nodeSelector is not present")
-	}
 
         //check if mutation has already been done
         if strings.HasPrefix(netConf.Master, "tenant-bond.") || strings.HasPrefix(netConf.Master, "provider-bond.") {
@@ -328,9 +328,10 @@ func validateCNIIpvlanConfig(operation v1beta1.Operation, netAttachDef netv1.Net
         //NAD update for ipvlan with master and vlan field change is not allowed
 	if netConf.Type == "ipvlan" && operation == "UPDATE" {
 	        oldConf, _, _ := shouldTriggerAction(oldNad)
-	        if oldConf.Master != netConf.Master && oldConf.Master != netConf.Master+"."+strconv.Itoa(netConf.Vlan) {
+		//ensure it is nokia proprietary ipvlan by checking if vlan id present in existing NAD
+	        if oldConf.Vlan > 0 && oldConf.Master != netConf.Master && oldConf.Master != netConf.Master+"."+strconv.Itoa(netConf.Vlan) {
 		        glog.Error("master and vlan field shall not change, you should delete and re-create")
-	                return false, fmt.Errorf("IPVLAN master and vlan field change is not allowed")
+	                return false, fmt.Errorf("Nokia Proprietary IPVLAN master and vlan field change is not allowed")
 	        }
 	}
 
