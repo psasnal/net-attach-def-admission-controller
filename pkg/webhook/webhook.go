@@ -276,8 +276,7 @@ func validateNetworkAttachmentDefinition(operation v1beta1.Operation, netAttachD
 	return true, mutationRequired, nil
 }
 
-// check if ipvlan validation is needed only when it ipvlan with vlan field present
-func needToCheckIpVlan(netAttachDef netv1.NetworkAttachmentDefinition) (bool) {
+func isVlanOperatorRequired(netAttachDef netv1.NetworkAttachmentDefinition) (bool) {
         var c map[string]interface{}
         json.Unmarshal([]byte(netAttachDef.Spec.Config), &c)
         if cniType, ok := c["type"]; ok {
@@ -285,13 +284,11 @@ func needToCheckIpVlan(netAttachDef netv1.NetworkAttachmentDefinition) (bool) {
 			annotationsMap := netAttachDef.GetAnnotations()
                         ns, ok := annotationsMap[nodeSelectorKey]
                         if !ok || len(ns) == 0 {
-                                glog.Infof("nodeSelector is not present, skip checking")
                                 return false
                         }
                         _, vlanExists := c["vlan"]
                         _, masterExists := c["master"]
                         if masterExists && vlanExists {
-                                glog.Infof("nodeSelector, master and vlan field are present, need checking")
                                 return true
                         }
                 }
@@ -299,12 +296,8 @@ func needToCheckIpVlan(netAttachDef netv1.NetworkAttachmentDefinition) (bool) {
 
         return false;
 }
-// validateCNIIpvlanConfig verifies following fields
-// conf: 'master' and 'vlan'
-// annotatoin: 'nodeSelector'
-// also check if mutation is needed
-// return netConfig, mutationRequired, and err for ipvlan validation error
-func shouldTriggerAction(netAttachDef netv1.NetworkAttachmentDefinition) (NetConf, bool, error) {
+
+func shouldTriggerMutation(netAttachDef netv1.NetworkAttachmentDefinition) (NetConf, bool, error) {
 	// Read NAD Config
 	var netConf NetConf
 	json.Unmarshal([]byte(netAttachDef.Spec.Config), &netConf)
@@ -338,20 +331,25 @@ func shouldTriggerAction(netAttachDef netv1.NetworkAttachmentDefinition) (NetCon
 	return netConf, true, nil
 }
 
+// validateCNIIpvlanConfig verifies following fields
+// conf: 'master' and 'vlan'
+// annotatoin: 'nodeSelector'
+// also check if mutation is needed
+// return mutationRequired, and err for ipvlan validation error
 func validateCNIIpvlanConfig(operation v1beta1.Operation, netAttachDef netv1.NetworkAttachmentDefinition, oldNad netv1.NetworkAttachmentDefinition) (bool, error) {
-	//skip if ipvlan checking is not needed
-        if !needToCheckIpVlan(netAttachDef) {
+	//skip checking if vlan operator is not required
+        if !isVlanOperatorRequired(netAttachDef) {
                 return false, nil
         }
 
-	netConf, mutationRequired, err := shouldTriggerAction(netAttachDef)
+	netConf, mutationRequired, err := shouldTriggerMutation(netAttachDef)
         if err != nil {
                 return false, fmt.Errorf("Failed to validate IPVLAN config: %v", err)
         }
 
         //NAD update for ipvlan with master and vlan field change is not allowed
 	if netConf.Type == "ipvlan" && operation == "UPDATE" {
-	        oldConf, _, _ := shouldTriggerAction(oldNad)
+	        oldConf, _, _ := shouldTriggerMutation(oldNad)
 		//ensure it is nokia proprietary ipvlan by checking if vlan id present in existing NAD
 	        if oldConf.Vlan > 0 && oldConf.Master != netConf.Master && oldConf.Master != netConf.Master+"."+strconv.Itoa(netConf.Vlan) {
 		        glog.Error("master and vlan field shall not change, you should delete and re-create")
