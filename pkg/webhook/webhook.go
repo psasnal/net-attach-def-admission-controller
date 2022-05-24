@@ -276,6 +276,29 @@ func validateNetworkAttachmentDefinition(operation v1beta1.Operation, netAttachD
 	return true, mutationRequired, nil
 }
 
+// check if ipvlan validation is needed only when it ipvlan with vlan field present
+func needToCheckIpVlan(netAttachDef netv1.NetworkAttachmentDefinition) (bool) {
+        var c map[string]interface{}
+        json.Unmarshal([]byte(netAttachDef.Spec.Config), &c)
+        if cniType, ok := c["type"]; ok {
+                if cniType == "ipvlan" {
+			annotationsMap := netAttachDef.GetAnnotations()
+                        ns, ok := annotationsMap[nodeSelectorKey]
+                        if !ok || len(ns) == 0 {
+                                glog.Infof("nodeSelector is not present, skip checking")
+                                return false
+                        }
+                        _, vlanExists := c["vlan"]
+                        _, masterExists := c["master"]
+                        if masterExists && vlanExists {
+                                glog.Infof("nodeSelector, master and vlan field are present, need checking")
+                                return true
+                        }
+                }
+        }
+
+        return false;
+}
 // validateCNIIpvlanConfig verifies following fields
 // conf: 'master' and 'vlan'
 // annotatoin: 'nodeSelector'
@@ -285,21 +308,17 @@ func shouldTriggerAction(netAttachDef netv1.NetworkAttachmentDefinition) (NetCon
 	// Read NAD Config
 	var netConf NetConf
 	json.Unmarshal([]byte(netAttachDef.Spec.Config), &netConf)
-	// Check NAD type, skip check if it is not ipvlan
-	if netConf.Type != "ipvlan" {
-		return netConf, false, nil
-	}
-	// Check nodeSelector, if not present, this is not nokia proprietary ipvlan, skip the check
-        annotationsMap := netAttachDef.GetAnnotations()
-        ns, ok := annotationsMap[nodeSelectorKey]
-        if !ok || len(ns) == 0 {
-                return netConf, false, nil
-        }
 	if netConf.Vlan < 1 || netConf.Vlan > 4095 {
 		return netConf, false, fmt.Errorf("Nokia Proprietary IPVLAN vlan value out of bound. Valid range 1..4095")
 	}
         if !strings.HasPrefix(netConf.Master, "tenant-bond") && !strings.HasPrefix(netConf.Master, "provider-bond"){
                 return netConf, false, fmt.Errorf("Nokia Proprietary IPVLAN only support master with tenant-bond and provider-bond")
+        }
+        // Check nodeSelector
+        annotationsMap := netAttachDef.GetAnnotations()
+        ns, ok := annotationsMap[nodeSelectorKey]
+        if !ok || len(ns) == 0 {
+                return netConf, false, fmt.Errorf("NAD with ipvlan, but nodeSelector is not present")
         }
 
         //check if mutation has already been done
@@ -320,6 +339,11 @@ func shouldTriggerAction(netAttachDef netv1.NetworkAttachmentDefinition) (NetCon
 }
 
 func validateCNIIpvlanConfig(operation v1beta1.Operation, netAttachDef netv1.NetworkAttachmentDefinition, oldNad netv1.NetworkAttachmentDefinition) (bool, error) {
+	//skip if ipvlan checking is not needed
+        if !needToCheckIpVlan(netAttachDef) {
+                return false, nil
+        }
+
 	netConf, mutationRequired, err := shouldTriggerAction(netAttachDef)
         if err != nil {
                 return false, fmt.Errorf("Failed to validate IPVLAN config: %v", err)
