@@ -131,11 +131,27 @@ func NewNetworkController(
 func (c *NetworkController) shouldTriggerAction(nad *netattachdef.NetworkAttachmentDefinition) (NetConf, bool) {
 	// Read NAD Config
 	var netConf NetConf
-	err := json.Unmarshal([]byte(nad.Spec.Config), &netConf)
-	if err != nil {
-		klog.Error("read NAD config failed: %s", err.Error())
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(nad.Spec.Config), &config); err != nil {
+		klog.Errorf("read NAD config failed: %s", err.Error())
 		return netConf, false
 	}
+
+	// Check if CNI config has plugin
+	if p, ok := config["plugins"]; ok {
+		plugins := p.([]interface{})
+		for _, v := range plugins {
+			plugin := v.(map[string]interface{})
+			if plugin["type"] == "ipvlan" {
+				confBytes, _ := json.Marshal(v)
+				json.Unmarshal(confBytes, &netConf)
+				break
+			}
+		}
+	} else {
+		json.Unmarshal([]byte(nad.Spec.Config), &netConf)
+	}
+
 	// Check NAD type
 	if netConf.Type != "ipvlan" {
 		return netConf, false
