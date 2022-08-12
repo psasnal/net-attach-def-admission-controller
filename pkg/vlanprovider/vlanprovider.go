@@ -4,16 +4,18 @@ import (
 	"fmt"
 )
 
-type NodeTopology struct {
-	// bond -> nic
-	Bonds map[string]map[string]map[string]interface{}
-	// pool -> nic
-	SriovPools map[string]map[string]map[string]interface{}
-}
-
 type Nic struct {
 	Name       string `json:"name"`
 	MacAddress string `json:"mac-address"`
+}
+
+// NIC in JSON format
+type JsonNic map[string]interface{}
+type NicMap map[string]JsonNic
+
+type NodeTopology struct {
+	Bonds      map[string]NicMap
+	SriovPools map[string]NicMap
 }
 
 type VlanProvider interface {
