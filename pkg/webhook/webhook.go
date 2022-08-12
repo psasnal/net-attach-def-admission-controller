@@ -28,7 +28,7 @@ import (
 	"github.com/golang/glog"
 	netv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	"github.com/pkg/errors"
-	"gopkg.in/intel/multus-cni.v3/pkg/types"
+	"gopkg.in/k8snetworkplumbingwg/multus-cni.v3/pkg/types"
 	"k8s.io/api/admission/v1beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -226,7 +226,7 @@ func validateNetworkAttachmentDefinition(operation v1beta1.Operation, netAttachD
 	glog.Infof("validating network config spec: %s", netAttachDef.Spec.Config)
 
 	var confBytes []byte
-        var mutationRequired bool = false
+	var mutationRequired bool = false
 	if netAttachDef.Spec.Config != "" {
 		// try to unmarshal config into NetworkConfig or NetworkConfigList
 		//  using actual code from libcni - if succesful, it means that the config
@@ -246,28 +246,28 @@ func validateNetworkAttachmentDefinition(operation v1beta1.Operation, netAttachD
 			err := errors.New("invalid config")
 			return false, false, err
 		}
-                // additional validation on sriov type
-                if err := validateCNIConfigSriov(confBytes); err != nil {
-                        err := errors.New(err.Error())
-                        return false, false, err
-                }
-                _, err = libcni.ConfListFromBytes(confBytes)
-                if err != nil {
-                        glog.Infof("spec is not a valid network config list: %s - trying to parse into standalone config", err)
-                        _, err = libcni.ConfFromBytes(confBytes)
-                        if err != nil {
-                                glog.Infof("spec is not a valid network config: %s", confBytes)
-                                err := errors.New("invalid config")
-                                return false, false, err
-                        }
-                }
-                // additional validation on ipvlan type
-                mutate, err := validateCNIIpvlanConfig(operation, netAttachDef, oldNad)
-                if err != nil {
-                        err := errors.New(err.Error())
-                        return false, false, err
-                }
-                mutationRequired = mutate
+		// additional validation on sriov type
+		if err := validateCNIConfigSriov(confBytes); err != nil {
+			err := errors.New(err.Error())
+			return false, false, err
+		}
+		_, err = libcni.ConfListFromBytes(confBytes)
+		if err != nil {
+			glog.Infof("spec is not a valid network config list: %s - trying to parse into standalone config", err)
+			_, err = libcni.ConfFromBytes(confBytes)
+			if err != nil {
+				glog.Infof("spec is not a valid network config: %s", confBytes)
+				err := errors.New("invalid config")
+				return false, false, err
+			}
+		}
+		// additional validation on ipvlan type
+		mutate, err := validateCNIIpvlanConfig(operation, netAttachDef, oldNad)
+		if err != nil {
+			err := errors.New(err.Error())
+			return false, false, err
+		}
+		mutationRequired = mutate
 	} else {
 		glog.Infof("Allowing empty spec.config")
 	}
@@ -276,25 +276,25 @@ func validateNetworkAttachmentDefinition(operation v1beta1.Operation, netAttachD
 	return true, mutationRequired, nil
 }
 
-func isVlanOperatorRequired(netAttachDef netv1.NetworkAttachmentDefinition) (bool) {
-        var c map[string]interface{}
-        json.Unmarshal([]byte(netAttachDef.Spec.Config), &c)
-        if cniType, ok := c["type"]; ok {
-                if cniType == "ipvlan" {
+func isVlanOperatorRequired(netAttachDef netv1.NetworkAttachmentDefinition) bool {
+	var c map[string]interface{}
+	json.Unmarshal([]byte(netAttachDef.Spec.Config), &c)
+	if cniType, ok := c["type"]; ok {
+		if cniType == "ipvlan" {
 			annotationsMap := netAttachDef.GetAnnotations()
-                        ns, ok := annotationsMap[nodeSelectorKey]
-                        if !ok || len(ns) == 0 {
-                                return false
-                        }
-                        _, vlanExists := c["vlan"]
-                        _, masterExists := c["master"]
-                        if masterExists && vlanExists {
-                                return true
-                        }
-                }
-        }
+			ns, ok := annotationsMap[nodeSelectorKey]
+			if !ok || len(ns) == 0 {
+				return false
+			}
+			_, vlanExists := c["vlan"]
+			_, masterExists := c["master"]
+			if masterExists && vlanExists {
+				return true
+			}
+		}
+	}
 
-        return false;
+	return false
 }
 
 func shouldTriggerMutation(netAttachDef netv1.NetworkAttachmentDefinition) (NetConf, bool, error) {
@@ -304,29 +304,29 @@ func shouldTriggerMutation(netAttachDef netv1.NetworkAttachmentDefinition) (NetC
 	if netConf.Vlan < 1 || netConf.Vlan > 4095 {
 		return netConf, false, fmt.Errorf("Nokia Proprietary IPVLAN vlan value out of bound. Valid range 1..4095")
 	}
-        if !strings.HasPrefix(netConf.Master, "tenant-bond") && !strings.HasPrefix(netConf.Master, "provider-bond"){
-                return netConf, false, fmt.Errorf("Nokia Proprietary IPVLAN only support master with tenant-bond and provider-bond")
-        }
-        // Check nodeSelector
-        annotationsMap := netAttachDef.GetAnnotations()
-        ns, ok := annotationsMap[nodeSelectorKey]
-        if !ok || len(ns) == 0 {
-                return netConf, false, fmt.Errorf("NAD with ipvlan, but nodeSelector is not present")
-        }
+	if !strings.HasPrefix(netConf.Master, "tenant-bond") && !strings.HasPrefix(netConf.Master, "provider-bond") {
+		return netConf, false, fmt.Errorf("Nokia Proprietary IPVLAN only support master with tenant-bond and provider-bond")
+	}
+	// Check nodeSelector
+	annotationsMap := netAttachDef.GetAnnotations()
+	ns, ok := annotationsMap[nodeSelectorKey]
+	if !ok || len(ns) == 0 {
+		return netConf, false, fmt.Errorf("NAD with ipvlan, but nodeSelector is not present")
+	}
 
-        //check if mutation has already been done
-        if strings.HasPrefix(netConf.Master, "tenant-bond.") || strings.HasPrefix(netConf.Master, "provider-bond.") {
-                m := strings.Split(netConf.Master, ".")
-                v, err := strconv.Atoi(m[1])
-                if err != nil {
-                        return netConf, false, fmt.Errorf("IPVLAN master field is incorrect")
-                }
-                if v != netConf.Vlan {
-                        return netConf, false, fmt.Errorf("IPVLAN master field is incorrect")
-                }
-                //mutation is already done, no need to mutate
-                return netConf, false, nil
-        }
+	//check if mutation has already been done
+	if strings.HasPrefix(netConf.Master, "tenant-bond.") || strings.HasPrefix(netConf.Master, "provider-bond.") {
+		m := strings.Split(netConf.Master, ".")
+		v, err := strconv.Atoi(m[1])
+		if err != nil {
+			return netConf, false, fmt.Errorf("IPVLAN master field is incorrect")
+		}
+		if v != netConf.Vlan {
+			return netConf, false, fmt.Errorf("IPVLAN master field is incorrect")
+		}
+		//mutation is already done, no need to mutate
+		return netConf, false, nil
+	}
 
 	return netConf, true, nil
 }
@@ -338,23 +338,23 @@ func shouldTriggerMutation(netAttachDef netv1.NetworkAttachmentDefinition) (NetC
 // return mutationRequired, and err for ipvlan validation error
 func validateCNIIpvlanConfig(operation v1beta1.Operation, netAttachDef netv1.NetworkAttachmentDefinition, oldNad netv1.NetworkAttachmentDefinition) (bool, error) {
 	//skip checking if vlan operator is not required
-        if !isVlanOperatorRequired(netAttachDef) {
-                return false, nil
-        }
+	if !isVlanOperatorRequired(netAttachDef) {
+		return false, nil
+	}
 
 	netConf, mutationRequired, err := shouldTriggerMutation(netAttachDef)
-        if err != nil {
-                return false, fmt.Errorf("Failed to validate IPVLAN config: %v", err)
-        }
+	if err != nil {
+		return false, fmt.Errorf("Failed to validate IPVLAN config: %v", err)
+	}
 
-        //NAD update for ipvlan with master and vlan field change is not allowed
+	//NAD update for ipvlan with master and vlan field change is not allowed
 	if netConf.Type == "ipvlan" && operation == "UPDATE" {
-	        oldConf, _, _ := shouldTriggerMutation(oldNad)
+		oldConf, _, _ := shouldTriggerMutation(oldNad)
 		//ensure it is nokia proprietary ipvlan by checking if vlan id present in existing NAD
-	        if oldConf.Vlan > 0 && oldConf.Master != netConf.Master && oldConf.Master != netConf.Master+"."+strconv.Itoa(netConf.Vlan) {
-		        glog.Error("master and vlan field shall not change, you should delete and re-create")
-	                return false, fmt.Errorf("Nokia Proprietary IPVLAN master and vlan field change is not allowed")
-	        }
+		if oldConf.Vlan > 0 && oldConf.Master != netConf.Master && oldConf.Master != netConf.Master+"."+strconv.Itoa(netConf.Vlan) {
+			glog.Error("master and vlan field shall not change, you should delete and re-create")
+			return false, fmt.Errorf("Nokia Proprietary IPVLAN master and vlan field change is not allowed")
+		}
 	}
 
 	return mutationRequired, nil
@@ -370,7 +370,7 @@ func mutateNetworkAttachmentDefinition(netAttachDef netv1.NetworkAttachmentDefin
 	c["master"] = vlanIfName
 	configBytes, _ := json.Marshal(c)
 	netAttachDef.Spec.Config = string(configBytes)
-        glog.V(5).Info("Mutate: Network Attachment Definition '%s'", netAttachDef.Spec.Config)
+	glog.V(5).Info("Mutate: Network Attachment Definition '%s'", netAttachDef.Spec.Config)
 
 	patch = append(patch, jsonPatchOperation{
 		Operation: "replace",

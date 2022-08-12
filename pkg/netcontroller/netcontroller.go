@@ -9,7 +9,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-        "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	coreInformers "k8s.io/client-go/informers/core/v1"
@@ -21,7 +21,7 @@ import (
 	netattachdef "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	clientset "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/clientset/versioned"
 	informers "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/client/informers/externalversions/k8s.cni.cncf.io/v1"
-	"gopkg.in/intel/multus-cni.v3/pkg/types"
+	"gopkg.in/k8snetworkplumbingwg/multus-cni.v3/pkg/types"
 )
 
 const (
@@ -318,32 +318,32 @@ func (c *NetworkController) handleNodeUpdateEvent(oldObj, newObj interface{}) {
 }
 
 func (c *NetworkController) updateNadAnnotations(nad *netattachdef.NetworkAttachmentDefinition, status string) error {
-        for i := 0; i < 256; i++ {
-                nad, err := c.netAttachDefClientSet.K8sCniCncfIoV1().NetworkAttachmentDefinitions(nad.ObjectMeta.Namespace).Get(context.TODO(), nad.ObjectMeta.Name, metav1.GetOptions{})
-                if err != nil {
-                        return err
-                }
-                anno := nad.GetAnnotations()
-                if status == "deleted" {
-                        _, ok := anno[c.nodeInfo.NodeName]
-                        if !ok {
-                                return nil
-                        }
-                        delete(anno, c.nodeInfo.NodeName)
-                } else {
-                        anno[c.nodeInfo.NodeName] = status
-                }
-                nad.SetAnnotations(anno)
-                _, err = c.netAttachDefClientSet.K8sCniCncfIoV1().NetworkAttachmentDefinitions(nad.ObjectMeta.Namespace).Update(context.TODO(), nad, metav1.UpdateOptions{})
-                if err == nil {
-                        return nil
-                }
-                if !errors.IsConflict(err) {
-                        klog.Errorf("Update NAD annotaton failed because %s", err.Error())
-                        return err
-                }
-        }
-        return nil
+	for i := 0; i < 256; i++ {
+		nad, err := c.netAttachDefClientSet.K8sCniCncfIoV1().NetworkAttachmentDefinitions(nad.ObjectMeta.Namespace).Get(context.TODO(), nad.ObjectMeta.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		anno := nad.GetAnnotations()
+		if status == "deleted" {
+			_, ok := anno[c.nodeInfo.NodeName]
+			if !ok {
+				return nil
+			}
+			delete(anno, c.nodeInfo.NodeName)
+		} else {
+			anno[c.nodeInfo.NodeName] = status
+		}
+		nad.SetAnnotations(anno)
+		_, err = c.netAttachDefClientSet.K8sCniCncfIoV1().NetworkAttachmentDefinitions(nad.ObjectMeta.Namespace).Update(context.TODO(), nad, metav1.UpdateOptions{})
+		if err == nil {
+			return nil
+		}
+		if !errors.IsConflict(err) {
+			klog.Errorf("Update NAD annotaton failed because %s", err.Error())
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *NetworkController) worker() {
