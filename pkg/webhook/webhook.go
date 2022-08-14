@@ -262,12 +262,10 @@ func validateNetworkAttachmentDefinition(operation v1beta1.Operation, netAttachD
 			}
 		}
 		// additional validation on ipvlan type
-		mutate, err := validateCNIIpvlanConfig(operation, netAttachDef, oldNad)
+		mutationRequired, err = validateCNIIpvlanConfig(operation, netAttachDef, oldNad)
 		if err != nil {
-			err := errors.New(err.Error())
 			return false, false, err
 		}
-		mutationRequired = mutate
 	} else {
 		glog.Infof("Allowing empty spec.config")
 	}
@@ -308,12 +306,14 @@ func isVlanOperatorRequired(netAttachDef netv1.NetworkAttachmentDefinition) (Net
 			}
 		}
 	} else {
-		_, vlanExists := c["vlan"]
-		_, masterExists := c["master"]
-		if masterExists && vlanExists {
-			err := json.Unmarshal([]byte(netAttachDef.Spec.Config), &netConf)
-			if err == nil {
-				return netConf, true
+		if c["type"] == "ipvlan" {
+			_, vlanExists := c["vlan"]
+			_, masterExists := c["master"]
+			if masterExists && vlanExists {
+				err := json.Unmarshal([]byte(netAttachDef.Spec.Config), &netConf)
+				if err == nil {
+					return netConf, true
+				}
 			}
 		}
 	}
