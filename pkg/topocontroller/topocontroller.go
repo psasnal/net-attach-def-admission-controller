@@ -157,10 +157,6 @@ func (c *TopologyController) shouldTriggerAction(nad *netattachdef.NetworkAttach
 	if netConf.Vlan < 1 || netConf.Vlan > 4095 {
 		return netConf, false
 	}
-	// Check master is tenant-bond.vlan or provider-bond.vlan
-	if !strings.HasPrefix(netConf.Master, "tenant-bond.") && !strings.HasPrefix(netConf.Master, "provider-bond.") {
-		return netConf, false
-	}
 	m := strings.Split(netConf.Master, ".")
 	v, err := strconv.Atoi(m[1])
 	if err != nil {
