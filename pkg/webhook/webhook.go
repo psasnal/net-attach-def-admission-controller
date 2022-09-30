@@ -361,10 +361,15 @@ func validateCNIIpvlanConfig(operation v1beta1.Operation, netAttachDef netv1.Net
 
 	//NAD update for ipvlan with master and vlan field change is not allowed
 	if operation == "UPDATE" {
-		oldConf, _ := isVlanOperatorRequired(oldNad)
-		//ensure it is nokia proprietary ipvlan by checking if vlan id present in existing NAD
-		if oldConf.Vlan > 0 && oldConf.Master != netConf.Master && oldConf.Master != netConf.Master+"."+strconv.Itoa(netConf.Vlan) {
-			return false, fmt.Errorf("Nokia Proprietary IPVLAN master and vlan field change is not allowed")
+		oldConf, mutated := isVlanOperatorRequired(oldNad)
+		if mutated {
+			if netConf.Vlan != oldConf.Vlan {
+				return false, fmt.Errorf("Nokia Proprietary IPVLAN vlan field can not change: %d->%d", oldConf.Vlan, netConf.Vlan)
+			}
+			m1 := strings.Split(oldConf.Master, ".")
+			if !strings.HasPrefix(netConf.Master, m1[0]) {
+				return false, fmt.Errorf("Nokia Proprietary IPVLAN device in master field can not change: %s", oldConf.Master)
+			}
 		}
 	}
 
